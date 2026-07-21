@@ -1,0 +1,12 @@
+node_modules/
+
+# 빌드 산출물 — npm run build로 생성
+dist/
+tsconfig.tsbuildinfo
+
+# npm pack 산출물
+*.tgz
+
+.env
+.env.local
+.DS_Store

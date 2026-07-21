@@ -1,0 +1,52 @@
+{
+  "name": "@saemol/sdk",
+  "version": "0.1.0",
+  "description": "Saemol 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증 (Node.js 서버용)",
+  "license": "MIT",
+  "homepage": "https://saemol.com/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soontofu030/saemol-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/soontofu030/saemol-sdk/issues"
+  },
+  "keywords": [
+    "saemol",
+    "license",
+    "entitlement",
+    "webhook",
+    "sdk"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && node ./scripts/postbuild.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5",
+    "vitest": "^4.1.9"
+  }
+}
