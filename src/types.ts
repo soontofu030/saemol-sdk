@@ -200,6 +200,57 @@ export interface CurrentUserNotFound {
 export type CurrentUserResponse = CurrentUserFound | CurrentUserNotFound
 
 // ============================================================
+// Analytics Summary — GET /api/v1/analytics/summary
+// ============================================================
+
+export interface AnalyticsSummaryParams {
+  /** 조회 기간(일) — 7 | 30 | 90. 기본 30, 그 외 값은 서버에서 30으로 정규화 */
+  period?: 7 | 30 | 90
+}
+
+/** 일별 집계 1일치 (KST 기준) */
+export interface AnalyticsDailyPoint {
+  /** YYYY-MM-DD (Asia/Seoul) */
+  date:          string
+  views:         number
+  favorites:     number
+  orders:        number
+  paid_orders:   number
+  /** 결제 완료 금액 합계 (원) */
+  revenue:       number
+  refunds:       number
+  refund_amount: number
+  /** 라이선스·권한 검증 호출 수 */
+  verify_calls:  number
+  usage_reports: number
+}
+
+export interface AnalyticsTotals {
+  views:         number
+  favorites:     number
+  orders:        number
+  paid_orders:   number
+  revenue:       number
+  refunds:       number
+  refund_amount: number
+  verify_calls:  number
+  usage_reports: number
+  /** 조회 → 결제 전환율 (%) */
+  conversion_rate: number
+}
+
+export interface AnalyticsSummaryResponse {
+  product_id: string
+  /** 실제 적용된 기간(일) — 요청값이 7/30/90이 아니면 30 */
+  period:     number
+  /** 집계 기준 시간대 (고정: 'Asia/Seoul') */
+  timezone:   string
+  /** 오래된 날짜 → 최신 날짜 순 */
+  days:       AnalyticsDailyPoint[]
+  totals:     AnalyticsTotals
+}
+
+// ============================================================
 // 판매자 웹훅 이벤트 타입 (플랫폼 → 판매자, INTEGRATIONS.md §3)
 // ============================================================
 

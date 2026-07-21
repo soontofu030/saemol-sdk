@@ -44,6 +44,10 @@ const ent = await saemol.verifyEntitlement({ apiKey: 'mfk_…' })
 // Report usage · 사용량 리포팅 (사용량 기반 상품)
 const report = await saemol.reportUsage({ apiKey: 'mfk_…', quantity: 120 })
 if (report.accepted && !report.allowed) block() // overage policy = block
+
+// Analytics · 애널리틱스 요약 (SDK Advanced)
+const { totals } = await saemol.analytics({ period: 30 })
+console.log(totals.revenue, totals.conversion_rate)
 ```
 
 ## Webhooks · 웹훅 서명 검증
@@ -69,7 +73,21 @@ export async function POST(req: Request) {
 }
 ```
 
-Events · 이벤트: `entitlement.activated` · `entitlement.revoked` · `usage.threshold_exceeded` · `tenant.provision_requested` · `subscription.renewed` · `subscription.expired`
+Events · 이벤트: `entitlement.activated` · `entitlement.revoked` · `usage.threshold_exceeded` · `tenant.provision_requested` · `subscription.renewed` · `subscription.expired` 외 33종
+
+**Forward compatible · 상위 호환**: events added to the platform after this SDK release pass through instead of throwing, so an older SDK never 500s your webhook endpoint. Handle them in your `switch` default, or detect them explicitly:
+
+플랫폼에 새로 추가된 이벤트도 서명만 유효하면 통과합니다 — 구버전 SDK가 웹훅 핸들러를 죽이지 않도록 하기 위함입니다. `switch`의 `default`에서 무시하거나 아래처럼 구분하세요.
+
+```ts
+import { verifyWebhook, isKnownWebhookEvent } from '@saemol/sdk'
+
+const event = verifyWebhook({ headers, rawBody, secret })
+if (!isKnownWebhookEvent(event.event)) {
+  logger.info('unknown event — SDK 업그레이드 필요', event.event)
+  return Response.json({ received: true })
+}
+```
 
 ## Error contract · 에러 규약
 
@@ -79,7 +97,8 @@ Events · 이벤트: `entitlement.activated` · `entitlement.revoked` · `usage.
 | Integration misconfig (bad secret 401, bad request 400) | Throws `SaemolApiError` |
 | Transient 502/503/504 | Retried (idempotent calls only), then `SaemolApiError` |
 | Network failure / timeout | Throws `SaemolNetworkError` (`timedOut` flag) |
-| Webhook verification failure | Throws `SaemolWebhookError` (`code` for cause) |
+| Webhook signature / timestamp invalid | Throws `SaemolWebhookError` (`code` for cause) |
+| Webhook event unknown to this SDK version | Passes through — does **not** throw |
 
 `reportUsage` is **never retried automatically** to avoid double counting — decide re-submission yourself.
 `reportUsage`는 중복 집계 방지를 위해 자동 재시도하지 않습니다.

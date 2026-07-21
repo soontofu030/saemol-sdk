@@ -4,7 +4,7 @@
 export { Saemol, SDK_VERSION } from './client.js'
 export type { SaemolOptions } from './client.js'
 
-export { verifyWebhook } from './webhooks.js'
+export { verifyWebhook, isKnownWebhookEvent } from './webhooks.js'
 export type { VerifyWebhookParams, WebhookHeaders } from './webhooks.js'
 
 export {
@@ -36,6 +36,10 @@ export type {
   CurrentUserResponse,
   CurrentUserFound,
   CurrentUserNotFound,
+  AnalyticsSummaryParams,
+  AnalyticsSummaryResponse,
+  AnalyticsDailyPoint,
+  AnalyticsTotals,
   SaemolWebhookEvent,
   SaemolWebhookEventType,
   OrderPaidData,

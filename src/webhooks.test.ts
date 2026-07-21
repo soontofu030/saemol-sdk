@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { SaemolWebhookError } from './errors'
-import { verifyWebhook } from './webhooks'
+import { isKnownWebhookEvent, verifyWebhook } from './webhooks'
 
 // 플랫폼 발송 로직(lib/fulfillment/webhooks.ts)과 동일한 서명 생성
 function sign(secret: string, timestamp: string, body: string): string {
@@ -143,8 +143,13 @@ describe('verifyWebhook — 거부', () => {
     expect(codeOf(() => verifyWebhook({ headers, rawBody, secret: SECRET, now: NOW }))).toBe('invalid_timestamp')
   })
 
-  it('알 수 없는 이벤트명은 invalid_payload', () => {
-    const { headers, rawBody } = makeWebhook({ event: 'order.hacked' })
+  it('event 필드가 없는 본문은 invalid_payload', () => {
+    const timestamp = String(Math.floor(NOW / 1000))
+    const rawBody = JSON.stringify({ product_id: 'prod-1', data: {} })
+    const headers = {
+      'x-saemol-timestamp': timestamp,
+      'x-saemol-signature': sign(SECRET, timestamp, rawBody),
+    }
     expect(codeOf(() => verifyWebhook({ headers, rawBody, secret: SECRET, now: NOW }))).toBe('invalid_payload')
   })
 
@@ -156,6 +161,26 @@ describe('verifyWebhook — 거부', () => {
       'x-saemol-signature': sign(SECRET, timestamp, rawBody),
     }
     expect(codeOf(() => verifyWebhook({ headers, rawBody, secret: SECRET, now: NOW }))).toBe('invalid_payload')
+  })
+})
+
+describe('verifyWebhook — 상위 호환 (플랫폼에 새 이벤트가 추가된 경우)', () => {
+  it('SDK가 모르는 이벤트도 서명이 유효하면 통과시킨다', () => {
+    // 구버전 SDK를 쓰는 판매자의 핸들러가 500으로 죽지 않아야 한다
+    const { headers, rawBody } = makeWebhook({ event: 'order.disputed' })
+    const event = verifyWebhook({ headers, rawBody, secret: SECRET, now: NOW })
+    expect(event.event).toBe('order.disputed')
+    expect(event.product_id).toBe('prod-1')
+  })
+
+  it('모르는 이벤트라도 서명이 틀리면 여전히 거부한다', () => {
+    const { headers, rawBody } = makeWebhook({ event: 'order.disputed', secret: 'wrong' })
+    expect(codeOf(() => verifyWebhook({ headers, rawBody, secret: SECRET, now: NOW }))).toBe('invalid_signature')
+  })
+
+  it('isKnownWebhookEvent로 미지의 이벤트를 구분할 수 있다', () => {
+    expect(isKnownWebhookEvent('entitlement.revoked')).toBe(true)
+    expect(isKnownWebhookEvent('order.disputed')).toBe(false)
   })
 })
 

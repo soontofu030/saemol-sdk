@@ -63,6 +63,11 @@ export interface VerifyWebhookParams {
  * 판매자 웹훅 검증 — 서명(HMAC-SHA256 `{timestamp}.{body}`)과 타임스탬프를 확인하고
  * 타입된 이벤트를 반환한다. 검증 실패 시 SaemolWebhookError를 던진다.
  *
+ * 플랫폼에 새로 추가된 이벤트(이 SDK 버전이 모르는 이벤트)도 서명만 유효하면 그대로
+ * 통과시킨다 — 구버전 SDK를 쓰는 판매자의 핸들러가 500으로 죽지 않게 하기 위함이다.
+ * 따라서 `switch`의 `default`나 `if`의 else에서 미지의 이벤트를 무시하도록 작성할 것.
+ * 명시적으로 구분하려면 `isKnownWebhookEvent()`를 사용한다.
+ *
  * Next.js (App Router):
  * ```ts
  * export async function POST(req: Request) {
@@ -114,18 +119,38 @@ export function verifyWebhook(params: VerifyWebhookParams): SaemolWebhookEvent {
     throw new SaemolWebhookError('invalid_payload', '웹훅 본문이 유효한 JSON이 아닙니다')
   }
 
+  // 구조 검증만 수행한다. 이벤트 이름은 화이트리스트로 막지 않는다 —
+  // 플랫폼에 새 이벤트가 추가돼도 구버전 SDK를 쓰는 판매자의 핸들러가 깨지지 않도록
+  // 통과시키고, 처리 여부는 호출자가 switch/if의 default에서 결정한다.
+  // (보안은 위 HMAC 서명 검증이 담당하며, 이름 목록은 보안에 기여하지 않는다.)
   if (
     !parsed || typeof parsed !== 'object' ||
-    typeof (parsed as { event?: unknown }).event !== 'string' ||
-    !KNOWN_EVENTS.has((parsed as { event: string }).event)
+    typeof (parsed as { event?: unknown }).event !== 'string'
   ) {
     throw new SaemolWebhookError(
       'invalid_payload',
-      `알 수 없는 웹훅 이벤트: ${String((parsed as { event?: unknown } | null)?.event)}`,
+      '웹훅 본문에 문자열 event 필드가 없습니다',
     )
   }
 
   return parsed as SaemolWebhookEvent
+}
+
+/**
+ * 이 SDK 버전이 아는 이벤트인지 확인한다.
+ * `verifyWebhook`은 모르는 이벤트도 통과시키므로, 미지의 이벤트를 로깅하거나
+ * 별도 처리하고 싶을 때 사용한다.
+ *
+ * ```ts
+ * const event = verifyWebhook({ headers, rawBody, secret })
+ * if (!isKnownWebhookEvent(event.event)) {
+ *   logger.info('알 수 없는 이벤트 — SDK 업그레이드 필요', event.event)
+ *   return Response.json({ received: true })
+ * }
+ * ```
+ */
+export function isKnownWebhookEvent(event: string): event is SaemolWebhookEventType {
+  return KNOWN_EVENTS.has(event)
 }
 
 function getHeader(headers: WebhookHeaders, name: string): string | null {

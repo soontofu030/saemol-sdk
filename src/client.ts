@@ -1,5 +1,7 @@
 import { SaemolApiError, SaemolNetworkError } from './errors.js'
 import type {
+  AnalyticsSummaryParams,
+  AnalyticsSummaryResponse,
   CheckUpdateParams,
   CheckUpdateResponse,
   CurrentUserParams,
@@ -145,6 +147,24 @@ export class Saemol {
       },
       retry: true, // 조회 전용 — 멱등
       softStatuses: [404],
+    })
+  }
+
+  /**
+   * 애널리틱스 요약 — GET /api/v1/analytics/summary.
+   * 이 상품의 KST 일별 집계(조회·찜·주문·매출·환불·검증 호출·사용량 리포트)와 기간 합계를 가져온다.
+   * 요금제상 SDK Advanced(Business+)로 안내되는 기능이다.
+   *
+   * ```ts
+   * const { totals, days } = await saemol.analytics({ period: 30 })
+   * console.log(totals.revenue, totals.conversion_rate)
+   * ```
+   */
+  analytics(params: AnalyticsSummaryParams = {}): Promise<AnalyticsSummaryResponse> {
+    const query = params.period !== undefined ? `?period=${params.period}` : ''
+    return this.request<AnalyticsSummaryResponse>(`/api/v1/analytics/summary${query}`, {
+      method: 'GET',
+      retry: true, // 조회 전용 — 멱등
     })
   }
 

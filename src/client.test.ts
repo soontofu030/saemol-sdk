@@ -82,6 +82,60 @@ describe('health', () => {
   })
 })
 
+describe('analytics', () => {
+  const payload = {
+    product_id: 'prod-1',
+    period: 30,
+    timezone: 'Asia/Seoul',
+    days: [{
+      date: '2026-07-20', views: 10, favorites: 2, orders: 3, paid_orders: 2,
+      revenue: 20000, refunds: 0, refund_amount: 0, verify_calls: 5, usage_reports: 1,
+    }],
+    totals: {
+      views: 10, favorites: 2, orders: 3, paid_orders: 2, revenue: 20000,
+      refunds: 0, refund_amount: 0, verify_calls: 5, usage_reports: 1, conversion_rate: 20,
+    },
+  }
+
+  it('GET /api/v1/analytics/summary — period 쿼리 전송·집계 반환', async () => {
+    handler = json(200, payload)
+    const res = await makeClient().analytics({ period: 30 })
+
+    expect(res.totals.revenue).toBe(20000)
+    expect(res.totals.conversion_rate).toBe(20)
+    expect(res.days[0].date).toBe('2026-07-20')
+
+    const req = requests[0]
+    expect(req.method).toBe('GET')
+    expect(req.url).toBe('/api/v1/analytics/summary?period=30')
+    expect(req.headers['x-saemol-secret']).toBe('test-secret')
+  })
+
+  it('period 미지정 시 쿼리 없이 호출한다 (서버 기본값 사용)', async () => {
+    handler = json(200, payload)
+    await makeClient().analytics()
+    expect(requests[0].url).toBe('/api/v1/analytics/summary')
+  })
+
+  it('503은 재시도한다 (조회 전용 — 멱등)', async () => {
+    let n = 0
+    handler = (_req, res) => {
+      n++
+      if (n === 1) { res.writeHead(503); res.end('{}'); return }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    const res = await makeClient({ retryDelayMs: 1 }).analytics()
+    expect(res.product_id).toBe('prod-1')
+    expect(n).toBe(2)
+  })
+
+  it('401(시크릿 불일치)은 SaemolApiError를 던진다', async () => {
+    handler = json(401, { error: 'invalid secret' })
+    await expect(makeClient().analytics()).rejects.toBeInstanceOf(SaemolApiError)
+  })
+})
+
 describe('checkUpdate', () => {
   it('POST /api/v1/updates/check — current_version 전송·응답 반환', async () => {
     handler = json(200, {
