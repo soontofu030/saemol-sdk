@@ -7,11 +7,15 @@ export type { SaemolOptions } from './client.js'
 export { verifyWebhook, isKnownWebhookEvent } from './webhooks.js'
 export type { VerifyWebhookParams, WebhookHeaders } from './webhooks.js'
 
+export { SaemolOAuth, isSubscriptionActive, hasPlanFeature } from './oauth.js'
+export type { SaemolOAuthOptions } from './oauth.js'
+
 export {
   SaemolError,
   SaemolApiError,
   SaemolNetworkError,
   SaemolWebhookError,
+  SaemolOAuthError,
 } from './errors.js'
 
 export type {
@@ -40,6 +44,16 @@ export type {
   AnalyticsSummaryResponse,
   AnalyticsDailyPoint,
   AnalyticsTotals,
+  OAuthScope,
+  OAuthTokens,
+  OAuthEntitlement,
+  OAuthUserInfo,
+  OAuthSession,
+  CreateAuthorizationUrlParams,
+  ExchangeCodeParams,
+  RefreshTokensParams,
+  GetUserInfoParams,
+  HandleCallbackParams,
   SaemolWebhookEvent,
   SaemolWebhookEventType,
   OrderPaidData,

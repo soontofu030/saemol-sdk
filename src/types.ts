@@ -323,6 +323,12 @@ export interface EntitlementActivatedData {
   plan_name?: string | null
   license_key: string | null
   api_key: string | null
+  /**
+   * 인앱결제 SKU (kind='in_app'만 non-null) — 요금제명으로 상품 설정의 sku_map을 찾은 값.
+   * 토큰 검증 없이 웹훅만으로 어떤 인앱 상품인지 판별할 때 쓴다.
+   * 요금제명과 sku_map의 키가 다르면 null이 온다.
+   */
+  sku?: string | null
   buyer_id?: string
   reason?: string
   is_trial?: boolean
@@ -522,3 +528,96 @@ export type SaemolWebhookEvent = WebhookEventBase &
     | { event: 'analytics.weekly_summary'; data: AnalyticsSummaryData }
     | { event: 'analytics.monthly_summary'; data: AnalyticsSummaryData }
   )
+
+// ============================================================
+// OAuth 2.0 / SSO — "새몰 계정으로 로그인" (구독형 auth_method sso·oauth)
+// 근거: app/(auth)/oauth/authorize · app/api/v1/oauth/{token,userinfo}
+// ============================================================
+
+/**
+ * 요청 권한 범위.
+ *  - 'identity'    SSO — 신원 확인만 (auth_method='sso'의 유일한 값)
+ *  - 'entitlement' 신원 + 이 상품의 구독 상태·플랜 (auth_method='oauth' 기본값)
+ */
+export type OAuthScope = 'identity' | 'entitlement'
+
+/** 토큰 응답 — authorization_code 교환과 refresh_token 갱신이 동일 형태 */
+export interface OAuthTokens {
+  access_token: string
+  token_type: 'Bearer'
+  /** 액세스 토큰 유효 시간(초) */
+  expires_in: number
+  /** 갱신 시 회전(rotation)된다 — 새 값으로 반드시 교체 저장할 것 */
+  refresh_token: string
+  scope: OAuthScope
+}
+
+/** userinfo의 구독 요약 — scope가 'entitlement'일 때만 채워진다 */
+export interface OAuthEntitlement {
+  /** 지금 이 상품을 쓸 수 있는지 — 기능 개방 판정은 이 값 하나로 충분하다 */
+  valid: boolean
+  status: string
+  kind: string
+  plan_name: string | null
+  /** 판매자가 등록한 plan_features의 해당 플랜 항목 */
+  plan_features: string[] | null
+  current_period_end: string | null
+  expires_at: string | null
+  is_trial: boolean
+}
+
+/**
+ * 로그인한 구매자 정보.
+ * scope='identity'면 entitlement 필드 자체가 없고, 'entitlement'면 구독 요약이
+ * 함께 온다 (구매 이력이 없으면 null).
+ */
+export interface OAuthUserInfo {
+  /** 새몰 회원 식별자 — 판매자 서비스의 계정 연결 키로 쓴다 */
+  sub: string
+  name: string | null
+  email: string | null
+  product_id: string
+  scope: OAuthScope
+  entitlement?: OAuthEntitlement | null
+}
+
+export interface CreateAuthorizationUrlParams {
+  /**
+   * 미지정 시 scope 파라미터를 보내지 않고 플랫폼 기본값에 맡긴다
+   * (`sso`→identity, `oauth`→entitlement). 대부분 지정할 필요가 없다.
+   */
+  scope?: OAuthScope
+  /** 미지정 시 SDK가 암호학적 난수로 생성해 반환한다 */
+  state?: string
+  /** 생성자 redirectUri를 이 요청에서만 덮어쓴다 */
+  redirectUri?: string
+}
+
+export interface ExchangeCodeParams {
+  /** 콜백 쿼리의 code */
+  code: string
+  /** 인가 요청 때와 **정확히 같은** 값이어야 한다 */
+  redirectUri?: string
+}
+
+export interface RefreshTokensParams {
+  refreshToken: string
+}
+
+export interface GetUserInfoParams {
+  accessToken: string
+}
+
+export interface HandleCallbackParams {
+  /** 콜백 요청의 전체 URL 또는 쿼리스트링·검색 파라미터 */
+  url: string | URL | URLSearchParams
+  /** 인가 요청 때 발급한 state — 넘기면 불일치 시 state_mismatch로 거부한다 */
+  expectedState?: string
+  redirectUri?: string
+}
+
+/** handleCallback 한 번으로 얻는 로그인 결과 */
+export interface OAuthSession {
+  tokens: OAuthTokens
+  user: OAuthUserInfo
+}

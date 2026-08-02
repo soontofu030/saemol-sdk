@@ -59,3 +59,31 @@ export class SaemolWebhookError extends SaemolError {
     this.code = code
   }
 }
+
+/**
+ * OAuth 2.0 / SSO 플로우 실패.
+ *
+ * `code`는 RFC 6749의 오류 코드(플랫폼이 반환)와 SDK가 자체 판정하는 코드를 함께 담는다.
+ * 플랫폼에 새 코드가 생겨도 문자열로 그대로 전달된다 — switch의 default를 둘 것.
+ */
+export class SaemolOAuthError extends SaemolError {
+  readonly code:
+    | 'access_denied'          // 구매자가 동의 화면에서 거부
+    | 'invalid_request'        // 필수 파라미터 누락·형식 오류
+    | 'invalid_client'         // client_id/client_secret 불일치
+    | 'invalid_grant'          // 코드·리프레시 토큰이 만료·폐기·재사용됨
+    | 'unsupported_grant_type'
+    | 'invalid_token'          // 액세스 토큰이 만료·폐기됨 (userinfo 401)
+    | 'state_mismatch'         // CSRF 방어 — 보낸 state와 돌아온 state가 다름
+    | 'missing_code'           // 콜백에 code가 없음
+    | (string & {})            // 플랫폼이 새로 추가한 코드
+  /** HTTP 상태코드 (네트워크 단계 이전 실패면 null) */
+  readonly status: number | null
+
+  constructor(code: SaemolOAuthError['code'], message: string, status: number | null = null) {
+    super(message)
+    this.name = 'SaemolOAuthError'
+    this.code = code
+    this.status = status
+  }
+}

@@ -1,8 +1,8 @@
 # @saemol/sdk
 
-Saemol seller integration SDK for Node.js — verify licenses, check entitlements, report usage, and validate webhooks with a few lines of code.
+Saemol seller integration SDK for Node.js — verify licenses, check entitlements, report usage, validate webhooks, and add "Sign in with Saemol" in a few lines of code.
 
-새몰 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증을 몇 줄의 코드로 처리합니다.
+새몰 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증·새몰 계정 로그인(SSO)을 몇 줄의 코드로 처리합니다.
 
 - **Zero runtime dependencies** — uses built-in `fetch` (Node.js 18+)
 - **TypeScript types included** — responses are typed 1:1 with the platform API
@@ -89,6 +89,92 @@ if (!isKnownWebhookEvent(event.event)) {
 }
 ```
 
+## Sign in with Saemol · 새몰 계정으로 로그인 (SSO / OAuth 2.0)
+
+Let buyers sign in with their Saemol account — no separate signup, and you get their
+subscription status in the same response. Requires the product's auth method to be
+**새몰 계정으로 로그인** (구독형 상품의 인증 연동 방식).
+
+구매자가 별도 회원가입 없이 새몰 계정으로 로그인하고, 판매자는 그 응답만으로
+구독 여부·플랜까지 한 번에 확인합니다. API Key 방식과 달리 구매자가 키를 복사·입력할 필요가 없습니다.
+
+```ts
+import { SaemolOAuth, isSubscriptionActive, hasPlanFeature } from '@saemol/sdk'
+
+const oauth = new SaemolOAuth({
+  clientId:     process.env.SAEMOL_CLIENT_ID!,
+  clientSecret: process.env.SAEMOL_CLIENT_SECRET!,
+  redirectUri:  'https://app.example.com/auth/callback', // must match the product setting exactly
+})
+
+// 1) Login button — SDK generates the CSRF state for you
+//    로그인 버튼 — state는 SDK가 만들어 줍니다
+const { url, state } = oauth.createAuthorizationUrl()
+session.oauthState = state
+redirect(url)
+
+// 2) Callback — one call does error check + state check + code exchange + userinfo
+//    콜백 — 오류 확인·state 검증·토큰 교환·사용자 조회를 한 번에
+const { user, tokens } = await oauth.handleCallback({
+  url: request.url,
+  expectedState: session.oauthState,
+})
+
+if (!isSubscriptionActive(user)) return showPricing()
+if (hasPlanFeature(user, 'advanced')) enableAdvancedExport()
+
+await createSession({ saemolUserId: user.sub, refreshToken: tokens.refresh_token })
+```
+
+`redirectUri` must be registered in the product's **OAuth Redirect URI** setting and match
+**exactly** — no partial matches or wildcards (open-redirect protection).
+상품 설정의 OAuth Redirect URI에 **정확히 같은 값**을 등록해야 합니다.
+
+### Scopes · 권한 범위
+
+**The scope decides what you receive — you set it per login, not per product.**
+The same product can request different scopes from different pages.
+
+**무엇을 받을지는 로그인마다 `scope`로 정합니다 — 상품 등록이 아니라 런타임 결정입니다.**
+같은 상품에서 페이지마다 다르게 요청할 수 있습니다.
+
+| Scope | You get · 받는 것 |
+|---|---|
+| `identity` | `sub`, `name`, `email` — 신원 확인만 (로그인) |
+| `entitlement` (default · 기본) | 위 + `entitlement` (구독 상태·플랜·`plan_features`) |
+
+```ts
+oauth.createAuthorizationUrl()                     // entitlement (기본) — 로그인 + 구독
+oauth.createAuthorizationUrl({ scope: 'identity' }) // 신원만 (SSO에 해당)
+```
+
+`isSubscriptionActive()` always returns `false` when you requested `identity` — there is
+no subscription data to judge. 신원만 받는 로그인이라면 이 함수를 쓰지 마세요.
+
+### Refresh · 토큰 갱신
+
+Both tokens rotate on refresh — **always store the new `refresh_token`**; the old one is
+immediately invalid. 갱신 시 리프레시 토큰도 회전하므로 새 값을 반드시 교체 저장하세요.
+
+```ts
+try {
+  user = await oauth.getUserInfo({ accessToken })
+} catch (err) {
+  if (err instanceof SaemolOAuthError && err.code === 'invalid_token') {
+    const tokens = await oauth.refresh({ refreshToken })
+    await saveTokens(tokens)          // refresh_token rotated · 회전됨
+    user = await oauth.getUserInfo({ accessToken: tokens.access_token })
+  }
+}
+```
+
+### OAuth error codes · 오류 코드
+
+`SaemolOAuthError.code`: `access_denied` (buyer declined) · `invalid_client` ·
+`invalid_grant` (code reused/expired) · `invalid_request` · `invalid_token` ·
+`state_mismatch` (CSRF blocked) · `missing_code`. Unknown codes from the platform pass
+through as strings — keep a `default` branch.
+
 ## Error contract · 에러 규약
 
 | Situation · 상황 | Behavior · 동작 |
@@ -99,6 +185,7 @@ if (!isKnownWebhookEvent(event.event)) {
 | Network failure / timeout | Throws `SaemolNetworkError` (`timedOut` flag) |
 | Webhook signature / timestamp invalid | Throws `SaemolWebhookError` (`code` for cause) |
 | Webhook event unknown to this SDK version | Passes through — does **not** throw |
+| OAuth denial / bad state / expired token | Throws `SaemolOAuthError` (`code` for cause) |
 
 `reportUsage` is **never retried automatically** to avoid double counting — decide re-submission yourself.
 `reportUsage`는 중복 집계 방지를 위해 자동 재시도하지 않습니다.
