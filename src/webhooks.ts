@@ -24,6 +24,7 @@ const KNOWN_EVENTS: ReadonlySet<string> = new Set<SaemolWebhookEventType>([
   'product.rejected',
   'product.updated',
   'review.created',
+  'review.updated',
   'review.deleted',
   'product.featured',
   'product.unfeatured',

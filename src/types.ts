@@ -274,6 +274,7 @@ export type SaemolWebhookEventType =
   | 'product.rejected'
   | 'product.updated'
   | 'review.created'
+  | 'review.updated'
   | 'review.deleted'
   | 'product.featured'
   | 'product.unfeatured'
@@ -432,6 +433,14 @@ export interface ReviewCreatedData {
   user_id: string
 }
 
+/** 리뷰 수정 (Review Event). 작성 후 30일 이내 작성자 본인 수정 */
+export interface ReviewUpdatedData {
+  review_id: string
+  rating: number
+  title?: string | null
+  user_id: string
+}
+
 /** 리뷰 삭제 (Review Event). reason: 'author'(작성자) | 'admin'(관리자) */
 export interface ReviewDeletedData {
   review_id: string
@@ -512,6 +521,7 @@ export type SaemolWebhookEvent = WebhookEventBase &
     | { event: 'product.rejected'; data: ProductRejectedData }
     | { event: 'product.updated'; data: ProductUpdatedData }
     | { event: 'review.created'; data: ReviewCreatedData }
+    | { event: 'review.updated'; data: ReviewUpdatedData }
     | { event: 'review.deleted'; data: ReviewDeletedData }
     | { event: 'product.featured'; data: ProductFeaturedData }
     | { event: 'product.unfeatured'; data: ProductFeaturedData }
