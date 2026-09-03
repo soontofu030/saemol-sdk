@@ -2,8 +2,12 @@ import { SaemolApiError, SaemolNetworkError } from './errors.js'
 import type {
   AnalyticsSummaryParams,
   AnalyticsSummaryResponse,
+  CheckoutSessionResponse,
   CheckUpdateParams,
   CheckUpdateResponse,
+  CreateCheckoutParams,
+  CreateCheckoutResponse,
+  GetCheckoutParams,
   CurrentUserParams,
   CurrentUserResponse,
   HealthResponse,
@@ -184,6 +188,53 @@ export class Saemol {
       retry: false,
       softStatuses: [404],
     })
+  }
+
+  /**
+   * 인앱 결제 세션 생성 — POST /api/v1/checkout/sessions.
+   *
+   * 앱 안에서 결제가 필요할 때 이 메서드로 링크를 받아 사용자를 보내면 된다.
+   * PG 계약·결제창·정산·환불은 전부 새몰이 처리하고, 판매자는 결제 결과만 받는다.
+   *
+   * ⚠️ 금액을 보내지 않는다. 상품 수정 화면에 등록한 아이템 코드만 보내고
+   *    가격은 새몰이 그 등록값을 쓴다 — 그래서 앱이 뚫려도 가격이 조작되지 않는다.
+   *
+   * ```ts
+   * const { url } = await saemol.createCheckout({
+   *   itemCode: 'credit_100',
+   *   externalUserId: user.id,
+   *   returnUrl: 'https://myapp.com/billing/done',
+   * })
+   * // 사용자를 url로 보낸다 (리다이렉트 또는 새 창)
+   * ```
+   *
+   * 결제가 끝나면 `checkout.completed` 웹훅이 온다.
+   * 재시도하지 않는다 — 중복 세션이 만들어지면 사용자가 두 번 결제할 수 있다.
+   */
+  createCheckout(params: CreateCheckoutParams): Promise<CreateCheckoutResponse> {
+    return this.request<CreateCheckoutResponse>('/api/v1/checkout/sessions', {
+      method: 'POST',
+      body: {
+        item_code: params.itemCode,
+        ...(params.externalUserId !== undefined ? { external_user_id: params.externalUserId } : {}),
+        ...(params.returnUrl !== undefined ? { return_url: params.returnUrl } : {}),
+        ...(params.metadata !== undefined ? { metadata: params.metadata } : {}),
+      },
+      retry: false,
+    })
+  }
+
+  /**
+   * 인앱 결제 세션 조회 — GET /api/v1/checkout/sessions/{session_id}.
+   *
+   * 웹훅(`checkout.completed`)이 정상 경로이고 이건 **보완**이다 —
+   * 웹훅을 놓쳤거나, 결제를 마치고 앱으로 돌아온 사용자를 그 자리에서 확인할 때 쓴다.
+   */
+  getCheckout(params: GetCheckoutParams): Promise<CheckoutSessionResponse> {
+    return this.request<CheckoutSessionResponse>(
+      `/api/v1/checkout/sessions/${encodeURIComponent(params.sessionId)}`,
+      { method: 'GET', retry: true },
+    )
   }
 
   // ── 공통 요청 코어 ────────────────────────────────────────

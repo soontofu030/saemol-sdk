@@ -1,8 +1,8 @@
 # @saemol/sdk
 
-Saemol seller integration SDK for Node.js — verify licenses, check entitlements, report usage, validate webhooks, and add "Sign in with Saemol" in a few lines of code.
+Saemol seller integration SDK for Node.js — verify licenses, check entitlements, report usage, validate webhooks, take in-app payments, and add "Sign in with Saemol" in a few lines of code.
 
-새몰 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증·새몰 계정 로그인(SSO)을 몇 줄의 코드로 처리합니다.
+새몰 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증·인앱 결제·새몰 계정 로그인(SSO)을 몇 줄의 코드로 처리합니다.
 
 - **Zero runtime dependencies** — uses built-in `fetch` (Node.js 18+)
 - **TypeScript types included** — responses are typed 1:1 with the platform API
@@ -48,7 +48,84 @@ if (report.accepted && !report.allowed) block() // overage policy = block
 // Analytics · 애널리틱스 요약 (SDK Advanced)
 const { totals } = await saemol.analytics({ period: 30 })
 console.log(totals.revenue, totals.conversion_rate)
+
+// In-app checkout · 인앱 결제 링크 (PG 계약 불필요)
+const { url } = await saemol.createCheckout({ itemCode: 'credit_100', externalUserId: user.id })
 ```
+
+## In-app checkout · 인앱 결제
+
+Sell inside your own app — credits, feature unlocks, in-app subscriptions — **without your own PG contract**. Saemol charges the card, settles to you, and handles refunds; you only receive the result.
+
+내 앱 안에서 크레딧·기능 해제·앱 내 구독을 팝니다. **PG 계약 없이** 새몰이 결제·정산·환불을 처리하고, 판매자는 결과만 받습니다.
+
+First register the items on your product edit page (**상품 수정 → 인앱 아이템**). Each item has a `code`, a name, a price and a kind:
+
+| kind | 설명 | 반복 구매 |
+|---|---|---|
+| `consumable` | 크레딧·이용권 — 쓰면 없어진다. 결제마다 `quantity`만큼 지급 | 가능 |
+| `one_time` | 기능 해제 — 한 번 사면 계속 쓴다 | 불가 (이미 보유하면 거부) |
+| `subscription` | 앱 내 구독 — 주기마다 자동 결제 | 주기마다 자동 |
+
+```ts
+// 1) Create a checkout session on your server · 서버에서 결제 세션을 만든다
+const checkout = await saemol.createCheckout({
+  itemCode: 'credit_100',                        // 등록한 아이템 코드
+  externalUserId: user.id,                       // 내 앱의 사용자 id — 웹훅으로 되돌아온다
+  returnUrl: 'https://myapp.com/billing/done',   // optional
+  metadata: { source: 'editor_toolbar' },        // optional — 그대로 되돌아온다
+})
+
+// 2) Send the buyer there · 구매자를 보낸다
+res.redirect(checkout.url)
+
+checkout.session_id   // 나중에 조회할 때 쓴다
+checkout.expires_at   // 세션 유효기간 (30분)
+checkout.item.price   // 등록된 가격 (부가세 포함 총액)
+```
+
+> **The price never comes from your app.** You send only `itemCode`; Saemol uses the price registered on the product page. That is why a tampered client cannot buy a ₩5,000 pack for ₩1.
+>
+> **금액은 앱이 보내지 않습니다.** 코드만 보내고 가격은 새몰이 등록값을 씁니다 — 클라이언트를 변조해도 가격을 바꿀 수 없습니다. 가격을 바꾸려면 상품 수정 화면에서 바꾸세요. 앱은 고치지 않아도 됩니다.
+
+Then unlock the feature when the `checkout.completed` webhook arrives:
+
+```ts
+if (result.event.event === 'checkout.completed') {
+  const d = result.event.data
+  // d.external_user_id — 세션을 만들 때 넘긴 내 앱의 사용자 id
+  // d.item_code        — 'credit_100'
+  // d.quantity         — consumable이면 지급 수량, 그 외 null
+  // d.order_id         — 새몰 주문 id (환불 웹훅이 같은 값으로 온다)
+  await grantCredits(d.external_user_id, d.quantity)
+}
+```
+
+> Webhooks can arrive **twice** for the same payment (retry, race). Record `order_id` and skip orders you have already handled — that one line prevents double-granting credits.
+>
+> 같은 결제로 웹훅이 두 번 올 수 있습니다. `order_id`를 기록해 이미 처리한 주문은 건너뛰세요.
+
+Missed the webhook, or want to confirm a buyer who just came back? Read the session:
+
+```ts
+const s = await saemol.getCheckout({ sessionId })
+s.status          // 'pending' | 'completed' | 'cancelled' | 'expired'
+s.entitlement_id  // 발급된 권한 id (완료된 경우)
+```
+
+**Do not trust the return URL alone.** It carries `?checkout=completed&session_id=…`, but a buyer can edit the address bar — decide with the webhook or `getCheckout()`.
+**복귀 주소만 믿지 마세요.** 기능을 여는 판단은 웹훅이나 세션 조회로 합니다.
+
+Refunds send `order.refunded` and `entitlement.revoked` with the same `order_id` — take back what you granted there, or a refunded buyer keeps the credits.
+환불 시 같은 `order_id`로 두 웹훅이 갑니다. 그때 지급분을 회수하지 않으면 **환불받고도 크레딧이 남습니다.**
+
+Balances are yours to keep. Saemol tells you *how much* to grant (`quantity`); counting and deducting stays in your app.
+잔량 관리와 차감은 앱의 몫입니다 — 새몰은 지급할 수량만 알려 줍니다.
+
+> ⚠️ **Mobile app stores.** iOS/Android stores have their own rules for digital goods; opening this checkout inside a store-distributed app may violate them. Use it for web, desktop and server-side products.
+> 스토어에 올린 앱에서는 마켓 결제 정책이 별도로 적용될 수 있습니다 — 웹앱·데스크톱·서버형 서비스에서 쓰세요.
+
+Full guide (Korean): https://saemol.com/docs/in-app-checkout
 
 ## Webhooks · 웹훅 서명 검증
 

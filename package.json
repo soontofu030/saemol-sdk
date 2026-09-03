@@ -1,6 +1,6 @@
 {
   "name": "@saemol/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Saemol 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증 (Node.js 서버용)",
   "license": "MIT",
   "homepage": "https://saemol.com/docs",

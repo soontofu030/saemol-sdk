@@ -31,6 +31,7 @@ const KNOWN_EVENTS: ReadonlySet<string> = new Set<SaemolWebhookEventType>([
   'product.favorited',
   'api_key.issued',
   'api_key.revoked',
+  'checkout.completed',
   'team.member_invited',
   'team.member_joined',
   'team.role_changed',

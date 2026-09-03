@@ -281,6 +281,7 @@ export type SaemolWebhookEventType =
   | 'product.favorited'
   | 'api_key.issued'
   | 'api_key.revoked'
+  | 'checkout.completed'
   // 판매자 계정 단위 (seller_integrations.webhook_url 수신, product_id는 null)
   | 'team.member_invited'
   | 'team.member_joined'
@@ -630,4 +631,82 @@ export interface HandleCallbackParams {
 export interface OAuthSession {
   tokens: OAuthTokens
   user: OAuthUserInfo
+}
+// ── 인앱 결제 (In-App Checkout) ──────────────────────────────
+
+export type ProductItemKind = 'one_time' | 'consumable' | 'subscription'
+
+export interface CheckoutItemSummary {
+  code: string
+  name: string
+  /** 결제창에 실제로 표시되는 이름 (수량·주기가 붙는다) */
+  order_name: string
+  /** 부가가치세가 포함된 최종 결제 금액 (원) */
+  price: number
+  kind: ProductItemKind
+  /** 소모성 아이템이 1회 결제로 지급하는 수량 */
+  quantity: number | null
+  billing_cycle: 'month' | 'year' | null
+}
+
+export interface CreateCheckoutParams {
+  /** 상품 수정 화면에서 등록한 인앱 아이템 코드 */
+  itemCode: string
+  /** 앱에서의 사용자 식별자 — 웹훅으로 그대로 돌아온다 */
+  externalUserId?: string
+  /** 결제 후 돌아올 앱 주소. ?checkout=completed|cancelled&session_id=… 가 붙는다 */
+  returnUrl?: string
+  /** 웹훅으로 그대로 돌아오는 임의 데이터 */
+  metadata?: Record<string, unknown>
+}
+
+export interface CreateCheckoutResponse {
+  session_id: string
+  /** 구매자를 보낼 새몰 결제 페이지 주소 */
+  url: string
+  expires_at: string
+  is_test: boolean
+  item: CheckoutItemSummary
+}
+
+export type CheckoutSessionStatus = 'pending' | 'completed' | 'cancelled' | 'expired'
+
+export interface GetCheckoutParams {
+  sessionId: string
+}
+
+export interface CheckoutSessionResponse {
+  session_id: string
+  status: CheckoutSessionStatus
+  item_code: string | null
+  external_user_id: string | null
+  order_id: string | null
+  entitlement_id: string | null
+  entitlement: {
+    id: string
+    kind: string
+    status: string
+    metadata: Record<string, unknown>
+  } | null
+  is_test: boolean
+  expires_at: string
+  completed_at: string | null
+  metadata: Record<string, unknown>
+}
+
+/** 인앱 결제 완료 (In-App Event) */
+export interface CheckoutCompletedData {
+  session_id: string | null
+  order_id: string
+  order_number: string
+  buyer_id: string
+  /** 세션을 만들 때 넘긴 앱 사용자 식별자 */
+  external_user_id: string | null
+  entitlement_id: string | null
+  item_code: string
+  item_kind: ProductItemKind
+  item_name: string
+  quantity: number | null
+  amount: number
+  metadata: Record<string, unknown>
 }

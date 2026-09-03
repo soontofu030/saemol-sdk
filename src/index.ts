@@ -20,6 +20,14 @@ export {
 
 export type {
   HealthResponse,
+  ProductItemKind,
+  CheckoutItemSummary,
+  CreateCheckoutParams,
+  CreateCheckoutResponse,
+  CheckoutSessionStatus,
+  GetCheckoutParams,
+  CheckoutSessionResponse,
+  CheckoutCompletedData,
   VerifyLicenseParams,
   VerifyLicenseResponse,
   VerifyLicenseOk,
