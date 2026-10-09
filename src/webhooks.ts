@@ -126,15 +126,24 @@ export function verifyWebhook(params: VerifyWebhookParams): SaemolWebhookEvent {
   // 통과시키고, 처리 여부는 호출자가 switch/if의 default에서 결정한다.
   // (보안은 위 HMAC 서명 검증이 담당하며, 이름 목록은 보안에 기여하지 않는다.)
   if (
-    !parsed || typeof parsed !== 'object' ||
-    typeof (parsed as { event?: unknown }).event !== 'string'
+    !parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+    typeof (parsed as { event?: unknown }).event !== 'string' || !(parsed as { event: string }).event.trim() ||
+    !(parsed as { data?: unknown }).data || typeof (parsed as { data?: unknown }).data !== 'object' || Array.isArray((parsed as { data?: unknown }).data)
   ) {
     throw new SaemolWebhookError(
       'invalid_payload',
-      '웹훅 본문에 문자열 event 필드가 없습니다',
+      '웹훅 본문에는 문자열 event와 객체 data가 필요합니다',
     )
   }
 
+  const eventId = (parsed as { event_id?: unknown }).event_id
+  if (eventId !== undefined && (typeof eventId !== 'string' || !eventId.trim())) {
+    throw new SaemolWebhookError('invalid_payload', '웹훅 event_id 형식이 올바르지 않습니다')
+  }
+  const headerId = getHeader(params.headers, 'x-saemol-event-id')
+  if (eventId && headerId && eventId !== headerId) {
+    throw new SaemolWebhookError('invalid_payload', '웹훅 본문과 헤더의 event_id가 일치하지 않습니다')
+  }
   return parsed as SaemolWebhookEvent
 }
 

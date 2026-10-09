@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { SaemolNetworkError, SaemolOAuthError } from './errors.js'
+import { validOAuthTokens, validOAuthUser } from './response.js'
 import type {
   CreateAuthorizationUrlParams,
   ExchangeCodeParams,
@@ -112,6 +113,7 @@ export class SaemolOAuth {
   createAuthorizationUrl(params: CreateAuthorizationUrlParams = {}): { url: string; state: string } {
     const redirectUri = this.resolveRedirectUri(params.redirectUri)
     const state = params.state ?? randomBytes(16).toString('base64url')
+    if (!state.trim()) throw new SaemolOAuthError('invalid_request', 'state는 비어 있을 수 없습니다')
 
     const qs = new URLSearchParams({
       client_id: this.clientId,
@@ -182,6 +184,7 @@ export class SaemolOAuth {
       )
     }
 
+    if (!validOAuthUser(body)) throw new SaemolOAuthError('invalid_response', '사용자 조회 응답 형식이 올바르지 않습니다', res.status)
     return body as OAuthUserInfo
   }
 
@@ -193,6 +196,11 @@ export class SaemolOAuth {
   async handleCallback(params: HandleCallbackParams): Promise<OAuthSession> {
     const query = toSearchParams(params.url)
 
+    const returned = query.get('state')
+    if (typeof params.expectedState !== 'string' || !params.expectedState.trim() || !returned || returned !== params.expectedState) {
+      throw new SaemolOAuthError('state_mismatch', 'state가 없거나 일치하지 않아 로그인을 중단했습니다. 로그인을 다시 시작하세요.')
+    }
+
     // 동의 거부 등 — 플랫폼이 redirect_uri?error=… 로 되돌린 경우
     const error = query.get('error')
     if (error) {
@@ -202,17 +210,6 @@ export class SaemolOAuth {
           ? '구매자가 계정 연동을 거부했습니다'
           : `인가 실패: ${error}`,
       )
-    }
-
-    // CSRF 방어 — expectedState를 넘긴 경우에만 검사한다
-    if (params.expectedState !== undefined) {
-      const returned = query.get('state')
-      if (!returned || returned !== params.expectedState) {
-        throw new SaemolOAuthError(
-          'state_mismatch',
-          'state가 일치하지 않습니다 — 요청이 위조되었을 수 있어 로그인을 중단했습니다',
-        )
-      }
     }
 
     const code = query.get('code')
@@ -250,6 +247,7 @@ export class SaemolOAuth {
       throw new SaemolOAuthError(code, describeTokenError(code, res.status), res.status)
     }
 
+    if (!validOAuthTokens(body)) throw new SaemolOAuthError('invalid_response', '토큰 응답 형식이 올바르지 않습니다. 로그인을 다시 시작하세요.', res.status)
     return body as OAuthTokens
   }
 
@@ -275,8 +273,10 @@ export class SaemolOAuth {
  * scope='identity'(SSO 전용)면 구독 정보가 없으므로 항상 false —
  * 신원만 확인하는 서비스라면 이 함수를 쓰지 말 것.
  */
-export function isSubscriptionActive(user: OAuthUserInfo | null | undefined): boolean {
-  return user?.entitlement?.valid === true
+export function isSubscriptionActive(user: OAuthUserInfo | null | undefined, now: number = Date.now()): boolean {
+  const ent = user?.entitlement
+  if (!ent || ent.valid !== true || ent.status !== 'active') return false
+  return [ent.current_period_end, ent.expires_at].every(value => value === null || Number.isFinite(Date.parse(value)) && Date.parse(value) > now)
 }
 
 /**

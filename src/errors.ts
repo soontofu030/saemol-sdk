@@ -18,8 +18,10 @@ export class SaemolApiError extends SaemolError {
   readonly reason: string | null
   /** 파싱된 응답 본문 (JSON이 아니면 null) */
   readonly body: unknown
+  /** 비밀값 없이 서버 오류를 찾을 때 전달할 추적 ID. */
+  readonly requestId: string | null
 
-  constructor(status: number, body: unknown) {
+  constructor(status: number, body: unknown, requestId: string | null = null) {
     const reason =
       body && typeof body === 'object' && typeof (body as { reason?: unknown }).reason === 'string'
         ? (body as { reason: string }).reason
@@ -29,6 +31,7 @@ export class SaemolApiError extends SaemolError {
     this.status = status
     this.reason = reason
     this.body = body
+    this.requestId = requestId
   }
 }
 

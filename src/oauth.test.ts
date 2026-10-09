@@ -47,7 +47,7 @@ const USER: OAuthUserInfo = {
   entitlement: {
     valid: true, status: 'active', kind: 'subscription',
     plan_name: 'Pro', plan_features: ['core', 'advanced'],
-    current_period_end: '2026-08-22T00:00:00.000Z', expires_at: null, is_trial: false,
+    current_period_end: '2099-08-01T00:00:00Z', expires_at: null, is_trial: false,
   },
 }
 
@@ -270,21 +270,20 @@ describe('handleCallback', () => {
       .rejects.toMatchObject({ code: 'state_mismatch' })
   })
 
-  it('expectedState를 안 넘기면 state를 검사하지 않는다', async () => {
-    tokenThenUser()
-    const session = await makeClient().handleCallback({ url: '?code=c1' })
-    expect(session.user.sub).toBe('user-1')
+  it('expectedState가 누락되면 네트워크 요청 없이 거부한다', async () => {
+    await expect(makeClient().handleCallback({ url: '?code=c1' } as never)).rejects.toMatchObject({ code: 'state_mismatch' })
+    expect(requests).toHaveLength(0)
   })
 
   it('동의 거부(access_denied)를 그대로 알려준다', async () => {
-    await expect(makeClient().handleCallback({ url: '?error=access_denied&state=s1' }))
+    await expect(makeClient().handleCallback({ url: '?error=access_denied&state=s1', expectedState: 's1' }))
       .rejects.toSatisfy((err: unknown) =>
         err instanceof SaemolOAuthError && err.code === 'access_denied' && err.message.includes('거부'))
     expect(requests).toHaveLength(0)
   })
 
   it('code가 없으면 missing_code로 실패한다', async () => {
-    await expect(makeClient().handleCallback({ url: '?foo=bar' }))
+    await expect(makeClient().handleCallback({ url: '?foo=bar&state=s1', expectedState: 's1' }))
       .rejects.toMatchObject({ code: 'missing_code' })
   })
 
@@ -298,7 +297,9 @@ describe('handleCallback', () => {
     ]) {
       requests = []
       tokenThenUser()
-      const session = await makeClient().handleCallback({ url })
+      const query = url instanceof URL ? url.searchParams : url instanceof URLSearchParams ? url : new URLSearchParams(url.includes('?') ? url.split('?')[1] : url)
+      query.set('state', 's1')
+      const session = await makeClient().handleCallback({ url: query, expectedState: 's1' })
       expect(session.user.sub).toBe('user-1')
     }
   })

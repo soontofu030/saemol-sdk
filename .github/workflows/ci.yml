@@ -1,0 +1,52 @@
+name: SDK checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sdk:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check:public
+      - run: npm test
+      - run: npm run build
+      - name: CJS and ESM exports
+        run: node --input-type=module -e 'import { createRequire } from "node:module"; import { Saemol } from "./dist/esm/index.js"; if(typeof Saemol !== "function" || typeof createRequire(import.meta.url)("./dist/cjs/index.js").Saemol !== "function") process.exit(1)'
+      - name: Durable payment example
+        if: matrix.node == 24
+        run: npm run test:example
+      - name: Local setup preview safety
+        if: matrix.node == 24
+        run: npm run test:scaffold
+      - name: npm package allowlist
+        run: |
+          npm pack --dry-run --ignore-scripts --json > "$RUNNER_TEMP/sdk-pack.json"
+          npm run check:public -- --pack "$RUNNER_TEMP/sdk-pack.json"
+      - run: npm audit --audit-level=moderate
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Install verified Gitleaks
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output "$RUNNER_TEMP/gitleaks.tar.gz"
+          printf '%s  %s\n' 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb "$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan complete history
+        run: '"$RUNNER_TEMP/gitleaks" git . --log-opts=--all --redact=100 --no-banner'

@@ -1,6 +1,6 @@
 {
   "name": "@saemol/sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Saemol 판매자 연동 SDK — 라이선스 검증·권한 확인·사용량 리포팅·웹훅 서명 검증 (Node.js 서버용)",
   "license": "MIT",
   "homepage": "https://saemol.com/docs",
@@ -38,15 +38,36 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "scripts/cli.mjs",
+    "scripts/doctor.mjs",
+    "scripts/scaffold.mjs",
+    "scripts/self-test.mjs",
+    "examples/checkout-service/adapters.mjs",
+    "examples/checkout-service/handlers.mjs",
+    "examples/checkout-service/server.mjs",
+    "examples/checkout-service/store.mjs",
+    "examples/checkout-service/store.verify.mjs",
+    "examples/checkout-service/README.md",
+    "examples/checkout-service/portone.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && node ./scripts/postbuild.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:example": "node --test examples/checkout-service/store.verify.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "test:scaffold": "node --test scripts/scaffold.verify.mjs",
+    "self-test": "node scripts/self-test.mjs",
+    "check:public": "node scripts/check-public.mjs",
+    "prepack": "npm run build && npm run check:public"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "typescript": "^5",
     "vitest": "^4.1.9"
+  },
+  "bin": {
+    "saemol-sdk": "./scripts/cli.mjs"
   }
 }

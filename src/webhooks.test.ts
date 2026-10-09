@@ -50,6 +50,32 @@ function codeOf(fn: () => unknown): SaemolWebhookError['code'] | null {
 }
 
 describe('verifyWebhook — 정상 검증', () => {
+  it('호스티드 결제 완료 이벤트를 좁혀 판매자 사용자와 수량을 읽는다', () => {
+    const timestamp = String(Math.floor(NOW / 1000))
+    const rawBody = JSON.stringify({ event: 'checkout.completed', product_id: 'prod', sent_at: new Date(NOW).toISOString(), data: {
+      session_id: 'session', order_id: 'order', order_number: 'ORD', buyer_id: 'buyer', external_user_id: 'app-user',
+      entitlement_id: 'entitlement', item_code: 'credits', item_kind: 'consumable', item_name: '크레딧', quantity: 100, amount: 1000, metadata: {},
+    } })
+    const event = verifyWebhook({ rawBody, secret: SECRET, now: NOW, headers: { 'X-Saemol-Timestamp': timestamp, 'X-Saemol-Signature': sign(SECRET, timestamp, rawBody) } })
+    if (event.event !== 'checkout.completed') throw new Error('결제 완료 이벤트가 필요합니다')
+    const quantity: number | null = event.data.quantity
+    const userId: string | null = event.data.external_user_id
+    expect(quantity).toBe(100)
+    expect(userId).toBe('app-user')
+  })
+  it('재전송의 고정 event_id와 새 서명 시각을 허용한다', () => {
+    const rawBody = JSON.stringify({ event_id: 'stable-event', event: 'order.paid', product_id: 'prod', data: { order_id: 'order' }, sent_at: '2026-07-07T00:00:00Z' })
+    for (const offset of [0, 60_000]) {
+      const timestamp = String(Math.floor((NOW + offset) / 1000))
+      const event = verifyWebhook({ rawBody, secret: SECRET, now: NOW + offset, headers: { 'X-Saemol-Event-Id': 'stable-event', 'X-Saemol-Timestamp': timestamp, 'X-Saemol-Signature': sign(SECRET, timestamp, rawBody) } })
+      expect(event.event_id).toBe('stable-event')
+    }
+  })
+  it('서명된 본문과 헤더의 event_id가 다르면 거부한다', () => {
+    const rawBody = JSON.stringify({ event_id: 'body-id', event: 'order.paid' })
+    const timestamp = String(Math.floor(NOW / 1000))
+    expect(codeOf(() => verifyWebhook({ rawBody, secret: SECRET, now: NOW, headers: { 'X-Saemol-Event-Id': 'different', 'X-Saemol-Timestamp': timestamp, 'X-Saemol-Signature': sign(SECRET, timestamp, rawBody) } }))).toBe('invalid_payload')
+  })
   it('유효한 서명이면 타입된 이벤트를 반환한다', () => {
     const { headers, rawBody } = makeWebhook()
     const event = verifyWebhook({ headers, rawBody, secret: SECRET, now: NOW })

@@ -1,4 +1,5 @@
 import { SaemolApiError, SaemolNetworkError } from './errors.js'
+import { validApiResponse } from './response.js'
 import type {
   AnalyticsSummaryParams,
   AnalyticsSummaryResponse,
@@ -17,9 +18,12 @@ import type {
   VerifyEntitlementResponse,
   VerifyLicenseParams,
   VerifyLicenseResponse,
+  AcknowledgeCheckoutResponse,
+  CustomerPortalResponse,
+  AccessParams,
 } from './types.js'
 
-export const SDK_VERSION = '0.1.0'
+export const SDK_VERSION = '0.4.0'
 
 const DEFAULT_BASE_URL = 'https://saemol.com'
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -35,21 +39,24 @@ export interface SaemolOptions {
   baseUrl?: string
   /** 요청당 타임아웃 ms (기본 10초) */
   timeoutMs?: number
-  /** 멱등 호출(health·verify)의 최대 재시도 횟수 (기본 2) — reportUsage는 중복 집계 방지를 위해 재시도하지 않음 */
+  /** 조회 또는 idempotencyKey를 지정한 쓰기의 최대 재시도 횟수 (기본 2) */
   maxRetries?: number
   /** 재시도 대기 ms — 시도마다 2배씩 증가 (기본 300) */
   retryDelayMs?: number
   /** fetch 주입 (테스트·폴리필용, 기본: 전역 fetch — Node 18+) */
   fetch?: typeof globalThis.fetch
+  /** 상태와 추적 ID만 받는 관찰 콜백. 콜백 오류는 API 결과를 바꾸지 않는다. */
+  onResponse?: (info: { path: string; status: number; requestId: string | null; attempt: number }) => void
 }
 
 interface RequestOptions {
   method: 'GET' | 'POST'
   body?: Record<string, unknown>
-  /** 멱등 호출만 재시도 */
+  /** 조회 또는 멱등 키로 보호한 쓰기만 재시도 */
   retry: boolean
   /** 이 상태코드는 에러로 던지지 않고 본문을 그대로 반환 (예: 404 = 유효하지 않은 키) */
   softStatuses?: number[]
+  idempotencyKey?: string
 }
 
 /**
@@ -71,6 +78,7 @@ export class Saemol {
   private readonly baseUrl: string
   private readonly timeoutMs: number
   private readonly maxRetries: number
+  private readonly onResponse?: SaemolOptions['onResponse']
   private readonly retryDelayMs: number
   private readonly fetchFn: typeof globalThis.fetch
 
@@ -80,6 +88,7 @@ export class Saemol {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
+    this.onResponse = options.onResponse
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS
     this.fetchFn = options.fetch ?? globalThis.fetch
   }
@@ -173,9 +182,9 @@ export class Saemol {
   }
 
   /**
-   * 사용량 리포팅 — POST /api/v1/usage/report (사용량 기반 상품).
+   * 사용량 리포팅 — POST /api/v1/usage/report (사용량 측정 전달 방식).
    * `allowed: false`(정책 block + 초과)면 판매자 서버에서 사용을 차단한다.
-   * 중복 집계를 막기 위해 재시도하지 않는다 — 실패 시 호출자가 재전송 여부를 판단할 것.
+   * idempotencyKey가 있을 때만 같은 저장 결과를 복구하며 재시도한다.
    */
   reportUsage(params: ReportUsageParams): Promise<ReportUsageResponse> {
     return this.request<ReportUsageResponse>('/api/v1/usage/report', {
@@ -185,16 +194,18 @@ export class Saemol {
         quantity: params.quantity,
         ...(params.metadata !== undefined ? { metadata: params.metadata } : {}),
       },
-      retry: false,
+      retry: params.idempotencyKey !== undefined,
+      idempotencyKey: params.idempotencyKey,
       softStatuses: [404],
     })
   }
 
   /**
-   * 인앱 결제 세션 생성 — POST /api/v1/checkout/sessions.
+   * 새몰 호스티드 결제 세션 생성 — POST /api/v1/checkout/sessions.
    *
    * 앱 안에서 결제가 필요할 때 이 메서드로 링크를 받아 사용자를 보내면 된다.
-   * PG 계약·결제창·정산·환불은 전부 새몰이 처리하고, 판매자는 결제 결과만 받는다.
+   * 유료 거래 게이트가 열린 운영 환경에서는 새몰의 마켓 주문 흐름이 결제·정산·환불을
+   * 처리하고, 판매자는 결제 결과를 받는다. 현재 게이트 상태는 API 오류 응답으로 확인한다.
    *
    * ⚠️ 금액을 보내지 않는다. 상품 수정 화면에 등록한 아이템 코드만 보내고
    *    가격은 새몰이 그 등록값을 쓴다 — 그래서 앱이 뚫려도 가격이 조작되지 않는다.
@@ -209,7 +220,7 @@ export class Saemol {
    * ```
    *
    * 결제가 끝나면 `checkout.completed` 웹훅이 온다.
-   * 재시도하지 않는다 — 중복 세션이 만들어지면 사용자가 두 번 결제할 수 있다.
+   * idempotencyKey가 있으면 같은 구매 시도의 세션을 복구하며 재시도한다.
    */
   createCheckout(params: CreateCheckoutParams): Promise<CreateCheckoutResponse> {
     return this.request<CreateCheckoutResponse>('/api/v1/checkout/sessions', {
@@ -220,12 +231,13 @@ export class Saemol {
         ...(params.returnUrl !== undefined ? { return_url: params.returnUrl } : {}),
         ...(params.metadata !== undefined ? { metadata: params.metadata } : {}),
       },
-      retry: false,
+      retry: params.idempotencyKey !== undefined,
+      idempotencyKey: params.idempotencyKey,
     })
   }
 
   /**
-   * 인앱 결제 세션 조회 — GET /api/v1/checkout/sessions/{session_id}.
+   * 새몰 호스티드 결제 세션 조회 — GET /api/v1/checkout/sessions/{session_id}.
    *
    * 웹훅(`checkout.completed`)이 정상 경로이고 이건 **보완**이다 —
    * 웹훅을 놓쳤거나, 결제를 마치고 앱으로 돌아온 사용자를 그 자리에서 확인할 때 쓴다.
@@ -237,9 +249,29 @@ export class Saemol {
     )
   }
 
+  /** 내 DB의 구매 적용 트랜잭션이 커밋된 뒤 호출한다. 같은 세션의 확인은 한 번만 기록된다. */
+  acknowledgeCheckout(params: GetCheckoutParams): Promise<AcknowledgeCheckoutResponse> {
+    return this.request(`/api/v1/checkout/sessions/${encodeURIComponent(params.sessionId)}/acknowledge`, { method: 'POST', retry: true })
+  }
+
+  /** 본인 새몰 계정으로 로그인해 이 판매자의 주문·구독·권한을 관리하는 주소. */
+  customerPortal(): Promise<CustomerPortalResponse> {
+    return this.request('/api/v1/customer-portal', { method: 'GET', retry: true })
+  }
+
+  /** 최신 권한을 조회하고 만료와 상품 기능 목록을 함께 확인한다. API 장애는 예외로 전달된다. */
+  async canAccess(params: AccessParams): Promise<boolean> {
+    const ent = await this.verifyEntitlement(params)
+    if (!ent.valid || 'reason' in ent && ent.reason || ent.status !== 'active' || !('current_period_end' in ent)) return false
+    const now = Date.now()
+    if ([ent.current_period_end, ent.expires_at].some(value => value !== null && (!Number.isFinite(Date.parse(value)) || Date.parse(value) <= now))) return false
+    return params.feature === undefined || ent.plan_features?.includes(params.feature) === true
+  }
+
   // ── 공통 요청 코어 ────────────────────────────────────────
 
   private async request<T>(path: string, opts: RequestOptions): Promise<T> {
+    if (opts.idempotencyKey !== undefined && !/^[\x21-\x7e]{1,200}$/.test(opts.idempotencyKey)) throw new TypeError('idempotencyKey는 공백 없는 1~200자 문자열이어야 합니다')
     const url = `${this.baseUrl}${path}`
     const attempts = opts.retry ? this.maxRetries + 1 : 1
     let lastError: unknown
@@ -255,6 +287,7 @@ export class Saemol {
             'Content-Type': 'application/json',
             'X-Saemol-Secret': this.secret,
             'X-Saemol-Sdk': `@saemol/sdk/${SDK_VERSION}`,
+            ...(opts.idempotencyKey !== undefined ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
           },
           ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
           signal: AbortSignal.timeout(this.timeoutMs),
@@ -264,16 +297,30 @@ export class Saemol {
         continue // 네트워크 실패·타임아웃 → 재시도 (허용 시)
       }
 
-      if (res.ok) return (await res.json()) as T
+      const requestId = res.headers.get('x-request-id')
+      try { this.onResponse?.({ path, status: res.status, requestId, attempt: attempt + 1 }) } catch { /* observer must not affect purchase processing */ }
+
+      if (res.ok) {
+        try {
+          const body: unknown = await res.json()
+          if (!validApiResponse(path, body)) throw new TypeError('Saemol API 응답 형식이 올바르지 않습니다')
+          return body as T
+        }
+        catch (error) { lastError = error; continue }
+      }
 
       if (RETRYABLE_STATUSES.has(res.status) && attempt < attempts - 1) {
-        lastError = new SaemolApiError(res.status, await parseBody(res))
+        lastError = new SaemolApiError(res.status, await parseBody(res), requestId)
         continue
       }
 
       const body = await parseBody(res)
-      if (opts.softStatuses?.includes(res.status)) return body as T
-      throw new SaemolApiError(res.status, body)
+      if (opts.softStatuses?.includes(res.status)) {
+        if (validApiResponse(path, body)) return body as T
+        lastError = new TypeError('Saemol API 거부 응답 형식이 올바르지 않습니다')
+        continue
+      }
+      throw new SaemolApiError(res.status, body, requestId)
     }
 
     if (lastError instanceof SaemolApiError) throw lastError

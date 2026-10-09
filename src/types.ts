@@ -34,11 +34,13 @@ export interface VerifyLicenseOk {
   status: 'active'
   kind: string
   plan_name: string | null
-  /** 인앱결제 SKU 매핑 (metadata.sku) */
+  /** 앱 활성화 코드 전달 방식의 SKU 매핑 (metadata.sku) */
   sku: string | null
   devices: LicenseDeviceInfo
   /** 기간제·trial 만료 시각 (null=무기한) */
   expires_at: string | null
+  /** 구독 라이선스의 현재 이용 기간 종료 시각 */
+  current_period_end?: string | null
   /** 무료 체험 발급 여부 */
   is_trial: boolean
   /** 샌드박스 테스트 키 여부 (테스트 시크릿으로 검증한 경우 true) */
@@ -88,7 +90,7 @@ export interface VerifyEntitlementResult {
   /** 판매자가 등록한 플랜별 기능 목록 (plan_features config) */
   plan_features: string[] | null
   rate_limit_per_min: number | null
-  /** 사용량 기반(kind=usage)일 때만 non-null */
+  /** 사용량 측정(kind=usage)일 때만 non-null */
   usage: EntitlementUsageInfo | null
   current_period_end: string | null
   expires_at: string | null
@@ -112,6 +114,8 @@ export type VerifyEntitlementResponse = VerifyEntitlementResult | VerifyEntitlem
 // ── POST /api/v1/usage/report ───────────────────────────────
 
 export interface ReportUsageParams {
+  /** 같은 사용 이벤트의 재전송에는 같은 키를 사용한다. 다른 수량·metadata 재사용은 409. */
+  idempotencyKey?: string
   /** API Key (mfk_…) */
   apiKey: string
   /** 이번에 소비한 양 (양수) */
@@ -130,7 +134,7 @@ export interface ReportUsageAccepted {
     limit: number | null
     remaining: number | null
   }
-  overage_policy: string
+  overage_policy: 'block' | 'notify'
   over_limit: boolean
 }
 
@@ -326,7 +330,7 @@ export interface EntitlementActivatedData {
   license_key: string | null
   api_key: string | null
   /**
-   * 인앱결제 SKU (kind='in_app'만 non-null) — 요금제명으로 상품 설정의 sku_map을 찾은 값.
+   * 앱 활성화 SKU (kind='in_app'만 non-null) — 요금제명으로 상품 설정의 sku_map을 찾은 값.
    * 토큰 검증 없이 웹훅만으로 어떤 인앱 상품인지 판별할 때 쓴다.
    * 요금제명과 sku_map의 키가 다르면 null이 온다.
    */
@@ -356,7 +360,7 @@ export interface UsageThresholdExceededData {
   unit: string | null
   used: number
   limit: number | null
-  overage_policy: string
+  overage_policy: 'block' | 'notify'
 }
 
 /** 화이트라벨 결제 완료 — 테넌트 생성 요청 */
@@ -497,6 +501,8 @@ export interface AnalyticsSummaryData {
 }
 
 interface WebhookEventBase {
+  /** Stable across retries. Optional for payloads created before 2026-10-01. */
+  event_id?: string
   /** 판매자 계정 단위 이벤트(team/payout/analytics)는 null */
   product_id: string | null
   sent_at: string
@@ -529,6 +535,7 @@ export type SaemolWebhookEvent = WebhookEventBase &
     | { event: 'product.favorited'; data: ProductFavoritedData }
     | { event: 'api_key.issued'; data: ApiKeyIssuedData }
     | { event: 'api_key.revoked'; data: ApiKeyRevokedData }
+    | { event: 'checkout.completed'; data: CheckoutCompletedData }
     | { event: 'team.member_invited'; data: TeamEventData }
     | { event: 'team.member_joined'; data: TeamEventData }
     | { event: 'team.role_changed'; data: TeamEventData }
@@ -565,7 +572,7 @@ export interface OAuthTokens {
 
 /** userinfo의 구독 요약 — scope가 'entitlement'일 때만 채워진다 */
 export interface OAuthEntitlement {
-  /** 지금 이 상품을 쓸 수 있는지 — 기능 개방 판정은 이 값 하나로 충분하다 */
+  /** 조회 시점의 사용 권한. 저장된 응답은 만료 시각 확인과 주기적인 재조회가 필요하다. */
   valid: boolean
   status: string
   kind: string
@@ -622,8 +629,8 @@ export interface GetUserInfoParams {
 export interface HandleCallbackParams {
   /** 콜백 요청의 전체 URL 또는 쿼리스트링·검색 파라미터 */
   url: string | URL | URLSearchParams
-  /** 인가 요청 때 발급한 state — 넘기면 불일치 시 state_mismatch로 거부한다 */
-  expectedState?: string
+  /** 인가 요청 때 서버 세션에 저장한 state. 누락·빈 값·불일치는 거부한다. */
+  expectedState: string
   redirectUri?: string
 }
 
@@ -632,7 +639,7 @@ export interface OAuthSession {
   tokens: OAuthTokens
   user: OAuthUserInfo
 }
-// ── 인앱 결제 (In-App Checkout) ──────────────────────────────
+// ── 새몰 호스티드 결제 (내부 API 호환명: In-App Checkout) ───
 
 export type ProductItemKind = 'one_time' | 'consumable' | 'subscription'
 
@@ -650,6 +657,8 @@ export interface CheckoutItemSummary {
 }
 
 export interface CreateCheckoutParams {
+  /** 구매 시도별 고유 키. 응답 유실 시 같은 요청·키로 같은 세션을 복구한다. */
+  idempotencyKey?: string
   /** 상품 수정 화면에서 등록한 인앱 아이템 코드 */
   itemCode: string
   /** 앱에서의 사용자 식별자 — 웹훅으로 그대로 돌아온다 */
@@ -675,6 +684,22 @@ export interface GetCheckoutParams {
   sessionId: string
 }
 
+export interface AcknowledgeCheckoutResponse {
+  recorded: true
+  session_id: string
+  applied_at: string
+}
+
+export interface CustomerPortalResponse {
+  url: string
+  requires_login: true
+}
+
+export interface AccessParams extends VerifyEntitlementParams {
+  /** 판매자가 상품 plan_features에 등록한 기능 이름 */
+  feature?: string
+}
+
 export interface CheckoutSessionResponse {
   session_id: string
   status: CheckoutSessionStatus
@@ -694,7 +719,7 @@ export interface CheckoutSessionResponse {
   metadata: Record<string, unknown>
 }
 
-/** 인앱 결제 완료 (In-App Event) */
+/** 새몰 호스티드 결제 완료 (In-App Event는 호환 카테고리명) */
 export interface CheckoutCompletedData {
   session_id: string | null
   order_id: string

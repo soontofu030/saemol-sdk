@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Saemol } from './client'
+import { readFileSync } from 'node:fs'
 import { SaemolApiError, SaemolNetworkError } from './errors'
 
 // ─────────────────────────────────────────────────────────────
@@ -79,6 +80,24 @@ describe('health', () => {
     expect(res.ok).toBe(true)
     expect(res.service).toBe('saemol-api')
     expect(requests[0].method).toBe('GET')
+    const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+    expect(requests[0].headers['x-saemol-sdk']).toBe(`@saemol/sdk/${version}`)
+  })
+})
+
+describe('응답 본문 오류', () => {
+  it('200 HTML 응답도 SDK 네트워크 오류로 안내하고 멱등 조회만 재시도한다', async () => {
+    handler = (_req, res) => { res.writeHead(200); res.end('<html>gateway error</html>') }
+    await expect(makeClient().health()).rejects.toBeInstanceOf(SaemolNetworkError)
+    expect(requests).toHaveLength(3)
+  })
+  it('사용량과 세션 생성의 응답이 손상돼도 중복 쓰기를 재시도하지 않는다', async () => {
+    handler = (_req, res) => { res.writeHead(200); res.end('{invalid-json') }
+    await expect(makeClient().reportUsage({ apiKey: 'dummy-key', quantity: 1 })).rejects.toBeInstanceOf(SaemolNetworkError)
+    expect(requests).toHaveLength(1)
+    requests = []
+    await expect(makeClient().createCheckout({ itemCode: 'dummy-item' })).rejects.toBeInstanceOf(SaemolNetworkError)
+    expect(requests).toHaveLength(1)
   })
 })
 
@@ -296,7 +315,7 @@ describe('reportUsage', () => {
   })
 
   it('400(사용량 상품 아님 등)은 SaemolApiError를 던진다', async () => {
-    handler = json(400, { accepted: false, reason: '사용량 기반 상품의 키가 아닙니다' })
+    handler = json(400, { accepted: false, reason: '사용량 측정 방식의 키가 아닙니다' })
     const err = await makeClient().reportUsage({ apiKey: 'mfk_1', quantity: 1 }).catch(e => e)
     expect(err).toBeInstanceOf(SaemolApiError)
     expect(err.status).toBe(400)
