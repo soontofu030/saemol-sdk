@@ -68,6 +68,6 @@
     "vitest": "^4.1.9"
   },
   "bin": {
-    "saemol-sdk": "./scripts/cli.mjs"
+    "saemol-sdk": "scripts/cli.mjs"
   }
 }
