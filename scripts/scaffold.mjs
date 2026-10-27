@@ -60,7 +60,7 @@ files.set('.gitignore', '.env\n.env.local\n*.sqlite*\nnode_modules/\n')
 files.set('README.md', `# 새몰 ${framework === 'next' ? 'Next.js' : 'Express'} 연결 시작
 
 1. Node.js 24 이상과 영구 저장 경로를 준비합니다. 기존 프로젝트에 필요한 파일을 검토해 복사하세요.
-2. @saemol/sdk 0.4.0 이상을 설치합니다.${framework === 'express' ? ' express도 설치합니다.' : ' Next.js App Router 프로젝트에 붙입니다.'}
+2. @saemol/sdk 0.5.0 이상을 설치합니다.${framework === 'express' ? ' express도 설치합니다.' : ' Next.js App Router 프로젝트에 붙입니다.'}
 3. .env.example을 서버 환경 변수로 설정합니다. 기본 키 또는 필요한 권한을 모두 가진 추가 키를 사용하세요.
 4. lib/saemol/auth.mjs의 resolveUserId를 실제 서버 로그인 세션으로 구현합니다. 기본 상태는 구매 요청을 거부합니다.
 5. 웹훅 주소를 상품 수정 → 연동 정보에서 등록합니다. 테스트 키 검증은 PG 테스트 결제와 다릅니다.

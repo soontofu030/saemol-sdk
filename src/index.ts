@@ -19,6 +19,7 @@ export {
 } from './errors.js'
 
 export type {
+  CommercePolicyResponse,
   HealthResponse,
   ProductItemKind,
   CheckoutItemSummary,

@@ -1,6 +1,7 @@
 import { SaemolApiError, SaemolNetworkError } from './errors.js'
 import { validApiResponse } from './response.js'
 import type {
+  CommercePolicyResponse,
   AnalyticsSummaryParams,
   AnalyticsSummaryResponse,
   CheckoutSessionResponse,
@@ -23,7 +24,7 @@ import type {
   AccessParams,
 } from './types.js'
 
-export const SDK_VERSION = '0.4.0'
+export const SDK_VERSION = '0.5.0'
 
 const DEFAULT_BASE_URL = 'https://saemol.com'
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -222,11 +223,17 @@ export class Saemol {
    * 결제가 끝나면 `checkout.completed` 웹훅이 온다.
    * idempotencyKey가 있으면 같은 구매 시도의 세션을 복구하며 재시도한다.
    */
+  /** 승인 상태 안내용 조회. 실제 결제 시 서버가 다시 검증한다. */
+  getCommercePolicy(): Promise<CommercePolicyResponse> {
+    return this.request('/api/v1/commerce/policy', { method: 'GET', retry: true })
+  }
+
   createCheckout(params: CreateCheckoutParams): Promise<CreateCheckoutResponse> {
     return this.request<CreateCheckoutResponse>('/api/v1/checkout/sessions', {
       method: 'POST',
       body: {
         item_code: params.itemCode,
+        ...(params.serviceOrigin !== undefined ? { service_origin: params.serviceOrigin } : {}),
         ...(params.externalUserId !== undefined ? { external_user_id: params.externalUserId } : {}),
         ...(params.returnUrl !== undefined ? { return_url: params.returnUrl } : {}),
         ...(params.metadata !== undefined ? { metadata: params.metadata } : {}),

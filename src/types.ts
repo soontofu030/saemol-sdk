@@ -656,7 +656,22 @@ export interface CheckoutItemSummary {
   billing_cycle: 'month' | 'year' | null
 }
 
+export interface CommercePolicyResponse {
+  version: string
+  provider: 'inicis'
+  live_checkout_ready: boolean
+  billing_ready: boolean
+  conditional_payout_ready: boolean
+  reason: string | null
+  terms_url: string
+  seller_terms_url: string
+  refund_url: string
+  notice: string
+}
+
 export interface CreateCheckoutParams {
+  /** 유료 live 결제는 PG에 승인된 외부 HTTPS origin을 지정한다. 등록 확인이지 호출자 신원 증명이 아니다. */
+  serviceOrigin?: string
   /** 구매 시도별 고유 키. 응답 유실 시 같은 요청·키로 같은 세션을 복구한다. */
   idempotencyKey?: string
   /** 상품 수정 화면에서 등록한 인앱 아이템 코드 */

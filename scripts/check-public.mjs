@@ -25,7 +25,7 @@ const scripts = new Set([
 ])
 const examples = new Set([
   'adapters.mjs', 'handlers.mjs', 'server.mjs', 'store.mjs', 'store.verify.mjs',
-  'README.md', 'portone.md',
+  'README.md', 'inicis.md', 'portone.md', // retired documentation redirect; excluded from npm files
 ])
 const publicPath = name => rootFiles.has(name)
   || /^src\/[a-z][a-z0-9-]*(?:\.test)?\.ts$/.test(name)
@@ -78,7 +78,7 @@ if (packIndex !== -1) {
     ...packageRoots, 'dist/cjs/index.js', 'dist/cjs/index.d.ts',
     'dist/esm/index.js', 'dist/esm/index.d.ts', 'dist/esm/package.json',
     ...[...runtimeScripts].map(name => 'scripts/' + name),
-    ...[...examples].map(name => 'examples/checkout-service/' + name),
+    ...[...examples].filter(name => name !== 'portone.md').map(name => 'examples/checkout-service/' + name),
   ]) {
     if (!packagedFiles.has(name)) failures.push(`Required package file is missing: ${name}`)
   }

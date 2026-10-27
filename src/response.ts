@@ -28,6 +28,9 @@ export function validApiResponse(path: string, value: unknown): boolean {
   }
   if (path.includes('/users/current')) return value.found === false ? text(value.reason)
     : value.found === true && isRecord(value.user) && text(value.user.id)
+  if (path.includes('/commerce/policy')) return text(value.version) && value.provider === 'inicis'
+    && ['live_checkout_ready','billing_ready','conditional_payout_ready'].every(key => typeof value[key] === 'boolean')
+    && nullableText(value.reason) && ['terms_url','seller_terms_url','refund_url','notice'].every(key => text(value[key]))
   if (path.includes('/health')) return typeof value.ok === 'boolean'
   if (path.includes('/updates/check')) return typeof value.update_available === 'boolean' && typeof value.update_required === 'boolean'
   if (path.includes('/analytics/summary')) return Array.isArray(value.days) && isRecord(value.totals)

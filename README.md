@@ -137,9 +137,16 @@ Balances are yours to keep. Saemol tells you *how much* to grant (`quantity`); c
 
 Full guide (Korean): https://saemol.com/docs/in-app-checkout
 
-### PortOne과 연결해 테스트하기
+### KG이니시스 결제 준비와 판매자 의무
 
-새몰 서버에 PortOne 테스트 상점·채널을 연결하면 위 `createCheckout()` 흐름으로 PG 결제를 시험할 수 있습니다. 판매자 앱은 새몰 연동 키와 새몰 웹훅 키를 쓰며, PortOne API Secret은 새몰 서버에만 둡니다. 새몰 테스트 키와 PG 테스트 채널은 각각의 설정입니다. [PortOne 테스트 연결 안내](examples/checkout-service/portone.md)를 참고하세요.
+새몰 서버가 KG이니시스 결제 승인·조회·환급을 처리합니다. 계약과 판매자/상품/외부 주소 승인 전에는 유료 결제가 제한됩니다. PG 키는 SDK에 넣지 않습니다.
+
+```ts
+const policy = await saemol.getCommercePolicy()
+const checkout = await saemol.createCheckout({ itemCode: 'credit_100', serviceOrigin: 'https://myapp.com', idempotencyKey: purchaseAttemptId })
+```
+
+정책 조회는 안내용이며 결제 시 서버가 승인 상태를 다시 검사합니다. SDK 응답·복귀 URL만으로 결제 완료를 신뢰하지 마세요. 판매 종료·연동 해지 후에도 이미 결제한 기간과 영구 라이선스의 이행·환급 의무가 남습니다. [KG이니시스 연동 조건](examples/checkout-service/inicis.md)을 확인하세요.
 
 ## Webhooks · 웹훅 서명 검증
 
