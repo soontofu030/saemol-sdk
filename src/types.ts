@@ -30,6 +30,9 @@ export interface LicenseDeviceInfo {
 }
 
 export interface VerifyLicenseOk {
+  purchase_option?: PurchaseOptionSnapshot | null
+  item_code?: string | null
+  purchase_quantity?: number
   valid: true
   status: 'active'
   kind: string
@@ -83,6 +86,9 @@ export interface EntitlementUsageInfo {
 
 /** 키가 조회된 경우의 전체 응답 — 상태가 active가 아니어도 이 형태로 온다(valid만 false). */
 export interface VerifyEntitlementResult {
+  purchase_option?: PurchaseOptionSnapshot | null
+  item_code?: string | null
+  purchase_quantity?: number
   valid: boolean
   status: string
   kind: string
@@ -658,7 +664,7 @@ export interface CheckoutItemSummary {
 
 export interface CommercePolicyResponse {
   version: string
-  provider: 'inicis'
+  provider: 'inicis' | 'toss'
   live_checkout_ready: boolean
   billing_ready: boolean
   conditional_payout_ready: boolean
@@ -670,6 +676,8 @@ export interface CommercePolicyResponse {
 }
 
 export interface CreateCheckoutParams {
+  /** Number of consumable packs; seller-defined maximum and server price apply. */
+  quantity?: number
   /** 유료 live 결제는 PG에 승인된 외부 HTTPS origin을 지정한다. 등록 확인이지 호출자 신원 증명이 아니다. */
   serviceOrigin?: string
   /** 구매 시도별 고유 키. 응답 유실 시 같은 요청·키로 같은 세션을 복구한다. */
@@ -736,9 +744,12 @@ export interface CheckoutSessionResponse {
 
 /** 새몰 호스티드 결제 완료 (In-App Event는 호환 카테고리명) */
 export interface CheckoutCompletedData {
+  is_test?: boolean
+  purchase_quantity?: number
+  purchase_option?: PurchaseOptionSnapshot
   session_id: string | null
-  order_id: string
-  order_number: string
+  order_id: string | null
+  order_number?: string
   buyer_id: string
   /** 세션을 만들 때 넘긴 앱 사용자 식별자 */
   external_user_id: string | null
@@ -749,4 +760,31 @@ export interface CheckoutCompletedData {
   quantity: number | null
   amount: number
   metadata: Record<string, unknown>
+}
+
+export interface PurchaseOptionSnapshot {
+  features?: string[]
+  validity_days?: number | null
+  device_limit?: number | null
+  user_limit?: number | null
+  usage_limit?: number | null
+  license_terms?: string
+  includes_source?: boolean
+  [key: string]: unknown
+}
+
+export interface SalesSummaryResponse {
+  source: 'verified_payments' | 'sandbox'
+  gross_sales: number
+  refunds: number
+  platform_fees: number
+  pg_fees: number
+  fee_vat: number
+  seller_expected: number
+  unsettled: number
+  active_subscribers: number
+  options: { product_id: string; item_code: string | null; sales_count: number; units_sold: number; refunded_units: number; gross: number; refunded: number }[]
+  payout_recorded: number
+  payout_requested: number
+  recovery_outstanding: number
 }

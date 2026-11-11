@@ -137,9 +137,9 @@ Balances are yours to keep. Saemol tells you *how much* to grant (`quantity`); c
 
 Full guide (Korean): https://saemol.com/docs/in-app-checkout
 
-### KG이니시스 결제 준비와 판매자 의무
+### 통합 결제 준비와 판매자 의무
 
-새몰 서버가 KG이니시스 결제 승인·조회·환급을 처리합니다. 계약과 판매자/상품/외부 주소 승인 전에는 유료 결제가 제한됩니다. PG 키는 SDK에 넣지 않습니다.
+새몰은 토스페이먼츠 통합 결제와 상점관리자의 수동 지급대행을 준비합니다. 기존 KG이니시스 경로와 과거 기록은 호환 목적으로 유지하며, 이번 변경에서 실결제를 활성화하지 않습니다. 계약과 판매자/상품/외부 주소 승인 전에는 유료 결제가 제한됩니다. PG 키는 SDK에 넣지 않습니다.
 
 ```ts
 const policy = await saemol.getCommercePolicy()
@@ -371,3 +371,32 @@ Generated files, local credentials, and internal reports are excluded. See [SECU
 ## License
 
 [MIT](LICENSE)
+
+## 구매 옵션과 연동 후 관리 (0.6.0)
+
+0.6.0은 `getPurchaseUrl`, `getSales`, 구매 수량 및 옵션 스냅샷 타입을 추가합니다. 기존 `verifyLicense`, `verifyEntitlement`, `createCheckout`, `getCheckout`, 웹훅 검증 메서드는 유지합니다. 0.5.0을 사용 중이면 새 기능을 사용하기 전에 업데이트하세요.
+
+- [판매자 연동 관리](https://saemol.com/dashboard/integrations)는 운영 현황·연결 설정·웹훅 기록으로 나눕니다. 첫 화면의 다음 조치에서 상품별 옵션·모의 구매·권한 관리·실패 재전송으로 이동합니다.
+- 상품 소유자는 사업자 인증 전에도 `test_` 연동 키와 테스트 권한을 발급할 수 있습니다. 테스트 키는 테스트 권한만 검증하고, 모의 구매는 실제 주문·매출·정산을 생성하지 않습니다.
+- `live_` 및 기존 운영 키는 발급·교체·각 API 호출 때 사업자 인증 완료 여부를 확인합니다. Free/Pro/Business 플랜은 사업자 인증을 대신하지 않습니다. 실결제에는 별도 PG·셀러·상품·외부 유입 승인이 필요합니다.
+- 연동 키는 서버 환경변수에만 보관합니다. 토스 PG 시크릿과 지급대행 API는 SDK에 포함하지 않습니다.
+
+```ts
+const purchaseUrl = saemol.getPurchaseUrl({ productId: '상품 ID 또는 slug', itemCode: 'team_year' })
+const session = await saemol.createCheckout({
+  itemCode: 'credits_100', quantity: 2, externalUserId: signedInUser.id,
+  idempotencyKey: storedPurchaseAttemptId,
+})
+const current = await saemol.getCheckout({ sessionId: session.session_id })
+const sales = await saemol.getSales() // 해당 상품의 검증된 결제 집계만 조회
+```
+
+외부 사용자 ID는 서버의 로그인 세션에서 정하세요. 복귀 URL의 완료 표시는 구매 증명이 아닙니다. 상품·환경·사용자·권한 상태를 서버에서 재확인합니다. `purchase_option`과 `purchase_quantity`는 구매 당시 조건이며, 판매자가 옵션을 바꿔도 기존 권한에는 반영하지 않습니다. 기기 수는 새몰 API가 검사하고 외부 서비스의 기능·사용자 수 제한은 이 스냅샷을 기준으로 적용합니다.
+
+`checkout.completed`의 테스트 이벤트는 `is_test: true`이고 금전 주문이 없어 `order_id`가 null일 수 있습니다. 이벤트 ID를 자체 DB unique 키로 저장하고 실제 아이템 지급과 한 트랜잭션으로 처리하세요. 재전송은 같은 이벤트 ID를 사용합니다. 테스트 이벤트를 운영 게임 재화에 적용하지 마세요.
+
+매출 원본은 새몰이 검증한 PG 결제 기록입니다. 테스트 키의 `getSales()`는 0과 sandbox 출처를 반환합니다. 상품 키에는 다른 상품의 지급 합계를 노출하지 않으며, 판매자 전체의 실제 지급 결과는 대시보드에서 봅니다. 새몰 내부 예상액과 토스 지급 잔액은 다릅니다. PG 수수료·부담 주체·수수료 확보 방식은 계약 확인 대상입니다. SDK는 송금·지급요청 기능을 제공하지 않습니다.
+
+[구매·정산 운영 가이드](https://saemol.com/docs/commerce-operations)에서 코드 없이 상태를 확인하는 순서와 실패 복구 방법을 안내합니다.
+
+판매하는 모든 옵션(일회성 구매·소모성·월간/연간 구독)은 각자의 현재 구성으로 새몰 연결을 완료해야 합니다. 연동 관리에서 모의 구매한 테스트 키를 판매자 서버가 `verifyLicense` 또는 `verifyEntitlement`로 검증하고, 테스트 회원에게 멱등 적용한 뒤 `acknowledgeCheckout`을 호출하세요. 웹훅 URL이 있으면 현재 주소의 테스트 수신 성공도 확인합니다. 대시보드의 «제공 가능» 체크나 한 옵션의 연결 완료로 다른 미연결 옵션을 판매할 수 없습니다. 가격·기능·이용 조건·연결 설정을 바꾸면 재테스트합니다. 기존 구매자의 계약과 이용 권한은 유지합니다.

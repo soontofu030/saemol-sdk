@@ -20,6 +20,8 @@ export {
 
 export type {
   CommercePolicyResponse,
+  PurchaseOptionSnapshot,
+  SalesSummaryResponse,
   HealthResponse,
   ProductItemKind,
   CheckoutItemSummary,

@@ -2,6 +2,7 @@ import { SaemolApiError, SaemolNetworkError } from './errors.js'
 import { validApiResponse } from './response.js'
 import type {
   CommercePolicyResponse,
+  SalesSummaryResponse,
   AnalyticsSummaryParams,
   AnalyticsSummaryResponse,
   CheckoutSessionResponse,
@@ -24,7 +25,7 @@ import type {
   AccessParams,
 } from './types.js'
 
-export const SDK_VERSION = '0.5.0'
+export const SDK_VERSION = '0.6.0'
 
 const DEFAULT_BASE_URL = 'https://saemol.com'
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -228,11 +229,24 @@ export class Saemol {
     return this.request('/api/v1/commerce/policy', { method: 'GET', retry: true })
   }
 
+  /** Public purchase link; carries no price, seller credential or payment assertion. */
+  getPurchaseUrl(params: { productId: string; itemCode?: string }): string {
+    const url = new URL(`/products/${encodeURIComponent(params.productId)}`, this.baseUrl)
+    if (params.itemCode) url.searchParams.set('option', params.itemCode)
+    return url.toString()
+  }
+
+  /** Verified platform ledger, scoped to this product. No payout request capability. */
+  getSales(): Promise<SalesSummaryResponse> {
+    return this.request('/api/v1/analytics/summary?view=commerce', { method: 'GET', retry: true })
+  }
+
   createCheckout(params: CreateCheckoutParams): Promise<CreateCheckoutResponse> {
     return this.request<CreateCheckoutResponse>('/api/v1/checkout/sessions', {
       method: 'POST',
       body: {
         item_code: params.itemCode,
+        ...(params.quantity !== undefined ? { quantity: params.quantity } : {}),
         ...(params.serviceOrigin !== undefined ? { service_origin: params.serviceOrigin } : {}),
         ...(params.externalUserId !== undefined ? { external_user_id: params.externalUserId } : {}),
         ...(params.returnUrl !== undefined ? { return_url: params.returnUrl } : {}),
